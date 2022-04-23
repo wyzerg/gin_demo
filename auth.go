@@ -56,6 +56,9 @@ func loginHandler(c *gin.Context){
 		c.JSON(http.StatusOK, Resp{Code: 1, Msg: "服务端异常，请稍后再试"})
 		return
 	}
+	// TODO 生成token成功后，存到redis，中间件middleware.go中，token校验有效后，会读redis中token
+
+
 
 	// 3，返回响应
 	c.JSON(http.StatusOK, Resp{

@@ -10,7 +10,8 @@ import (
 // 登录成功之后来生成jwt token返回,生成jwt的相关代码
 
 // 方便测试出效果，设置token的有效期：10秒过期，例子中设置2小时过期
-const TokenExpireDuration = time.Second * 10
+//const TokenExpireDuration = time.Second * 3600
+const TokenExpireDuration = time.Hour * 1
 
 var MySecret = []byte("夏天夏天悄悄过去") // 加盐的密钥
 
@@ -43,7 +44,10 @@ func GenToken(uid int64, name string) (string, error) {
 // ParseToken 用来 每次用户请求后端过来，携带token的时候，对token进行解析
 func ParseToken(tokenString string) (*MyClaims, error) {
 	// 解析token
-	token, err := jwt.ParseWithClaims(tokenString, &MyClaims{}, func(token *jwt.Token) (i interface{}, err error) {
+	token, err := jwt.ParseWithClaims(
+		tokenString,
+		&MyClaims{},
+		func(token *jwt.Token) (i interface{}, err error) {
 		// 回调函数，把加盐的字符串通过这个函数返回
 		return MySecret, nil
 	})
@@ -51,9 +55,13 @@ func ParseToken(tokenString string) (*MyClaims, error) {
 		return nil, err
 	}
 	// 解析出的token，如果是之前声明的token，并且 在有效期内(token.Valid)
-	if claims, ok := token.Claims.(*MyClaims); ok && token.Valid { // 校验token
-		// token校验成功
-		return claims, nil
+	if claims, ok := token.Claims.(*MyClaims); ok { // 校验token
+		if token.Valid{
+			// token校验成功，Claims 包含了 生成token中定义的uid和name都写在 Claims的结构体中
+			// 之后解析token的时候，解析成功后，就通过 claims.uid 和claims.name 来获取到当前用户的这个值，传给全局ctx，然后增删改查的方法
+			// 通过校验 uid来针对当前用户的uid来增删改查
+			return claims, nil
+		}
 	}
 	// token校验失败
 	return nil, errors.New("invalid token")

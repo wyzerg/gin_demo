@@ -26,6 +26,20 @@ func createTodoHandler(c *gin.Context) {
 		return // 错误就不往后走
 	}
 
+	// c 是贯穿gin框架所有函数，通过c获取当前用户的Uid，中间件中通过c 吧uid传到 ctx中了，
+	v,_ := c.Get(CtxUidKey)
+	// 拿到数据断言是否是int64类型
+	uid := v.(int64)
+	if uid <= 0{
+		// 异常
+		c.JSON(200, gin.H{
+			"code": 1,
+			"msg":  "登录异常", // 正常情况，不能直接返回错误给前端
+		})
+		return
+	}
+
+	todo.Uid = uid
 	// 2，处理业务逻辑，新增一条数据
 	if err := db.Create(&todo).Error; err != nil {
 		fmt.Println("db.Create err：", err)
@@ -58,12 +72,35 @@ func updateTodoHandler(c *gin.Context) {
 	}
 
 	// 2，执行业务逻辑，更新数据
-	// 2.1 先检查数据是否存在(根据主键检索)，因为在执行 c.ShouldBind之后，自动吧前端的数据填充到结构体中
-	// 参考：https://gorm.io/zh_CN/docs/query.html#%E7%94%A8%E4%B8%BB%E9%94%AE%E6%A3%80%E7%B4%A2
 
-	// 先将前端传来赋值给 todo对象的id属性， 现在数据库中查询一遍，然后吧数据保存到obj中
+	// 2.1 根据从c中获取uid，中间件传的uid，来获取对应uid下的待办事项
+	v,_ := c.Get(CtxUidKey)
+	// 接口类型要断言
+	uid := v.(int64)
+	if uid <= 0{
+		c.JSON(200, gin.H{
+			"code": 1,
+			"msg":  "登录异常，请重新登录", // 正常情况，不能直接返回错误给前端
+		})
+		return
+	}
+	//// 先将前端传来赋值给 todo对象的id属性， 现在数据库中查询一遍，然后吧数据保存到obj中
+	// 这里注释的原因是：下面 吧 uid 和 todo.ID 作为联合条件查询，所以这里不需要判断了
+	//if todo.Uid != uid{
+	//	// 修改的数据是不是自己的数据
+	//	c.JSON(200, gin.H{
+	//		"code": 1,
+	//		"msg":  "登录异常，请重新登录", // 正常情况，不能直接返回错误给前端
+	//	})
+	//	return
+	//}
+
+
+	// 2.2 先检查数据是否存在(根据主键检索)，因为在执行 c.ShouldBind之后，自动吧前端的数据填充到结构体中
+	// 参考：https://gorm.io/zh_CN/docs/query.html#%E7%94%A8%E4%B8%BB%E9%94%AE%E6%A3%80%E7%B4%A2
+	// 这里吧 uid 和 todo.ID 作为联合条件查询
 	var obj Todo
-	if err := db.First(&obj, todo.ID).Error; err != nil {
+	if err := db.Where("id = ? and uid = ?",todo.ID, uid).First(&obj).Error; err != nil {
 		// 返回2种错误的第1种： 没有这条记录的错误，通过 errors.Is 断言递归查找错误类型是否是 gorm.ErrRecordNotFound
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			c.JSON(200, gin.H{
@@ -80,6 +117,7 @@ func updateTodoHandler(c *gin.Context) {
 		})
 		return
 	}
+
 
 	// 验证过有数据后走到这，更新指定的字段"status",.Debug()显示具体执行的sql语句, 例如前端传 {"id":2,"status": true}
 	if err := db.Debug().Model(&todo).Update("status", todo.Status).Error; err != nil {
@@ -105,9 +143,22 @@ func updateTodoHandler(c *gin.Context) {
 func getTodoHandler(c *gin.Context) {
 	// 1，获取请求参数，由于返回所有数据，就不获取参数
 	// 2，执行业务逻辑
-	// 获取全部对象 db.find()，参考 https://gorm.io/zh_CN/docs/query.html#%E6%A3%80%E7%B4%A2%E5%85%A8%E9%83%A8%E5%AF%B9%E8%B1%A1
+	// 根据请求的uid获取全部对象 db.find()，参考 https://gorm.io/zh_CN/docs/query.html#%E6%A3%80%E7%B4%A2%E5%85%A8%E9%83%A8%E5%AF%B9%E8%B1%A1
 	var todos []Todo // todos是Todo类型的切片，如果查询单条数据就是结构体
-	if err := db.Debug().Find(&todos).Error; err != nil {
+	// 2.1 根据从c中获取uid，中间件传的uid，来获取对应uid下的待办事项
+	v,_ := c.Get(CtxUidKey)
+	// 接口类型要断言
+	uid := v.(int64)
+	if uid <= 0{
+		c.JSON(200, gin.H{
+			"code": 1,
+			"msg":  "登录异常，请重新登录", // 正常情况，不能直接返回错误给前端
+		})
+		return
+	}
+
+	// 根据token解析出来的uid查询
+	if err := db.Where("uid = ?",uid).Debug().Find(&todos).Error; err != nil {
 		fmt.Println("getTodoHandler 查询失败:", err)
 		c.JSON(200, gin.H{
 			"code": 1,
@@ -140,9 +191,22 @@ func deleteTodoHandler(c *gin.Context) {
 	}
 
 	// 业务逻辑
-	// 先根据这个id查一下有没有这条记录
+	// 2.1 根据从c中获取uid，中间件传的uid，来获取对应uid下的待办事项
+	v,_ := c.Get(CtxUidKey)
+	// 接口类型要断言
+	uid := v.(int64)
+	if uid <= 0{
+		c.JSON(200, gin.H{
+			"code": 1,
+			"msg":  "登录异常，请重新登录", // 正常情况，不能直接返回错误给前端
+		})
+		return
+	}
+
+	// 2.2先根据这个id查一下有没有这条记录
+	// 这里改为联合条件查询
 	var obj Todo
-	if err := db.Debug().First(&obj, id).Error; err != nil {
+	if err := db.Debug().Where("id = ? and uid = ?", id, uid).First(&obj).Error; err != nil {
 		// 返回2种错误的第1种： 没有这条记录的错误，通过 errors.Is 断言递归查找错误类型是否是 gorm.ErrRecordNotFound
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			c.JSON(200, gin.H{
